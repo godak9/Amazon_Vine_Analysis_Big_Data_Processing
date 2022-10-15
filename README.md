@@ -17,17 +17,17 @@ This project was broken down into the following two parts found in the Analysis 
    - Transform the extracted DataFrame into four DataFrames that match the schema in the pgAdmin tables 
    - Load the DataFrames into pgAdmin
 2. Determining Bias of Vine Reviews 
-   - Filter the data and create a new dataframe to pick reviews that are more likely to be helpful 
-   - Filter the dataframe with helpful reviews and create a new dataframe to retrieve rows where the number of "helpful_votes" divided by the number of "total_votes" is greater than or equal to 50%.
-   - Filter the dataframe with rows where "helpful_votes"/"total_votes" >= 50% and create a new dataframe to retrieve all rows where the review written was part of the paid Vine program.
-   - Filter the dataframe with rows where "helpful_votes"/"total_votes" >= 50% and create a new dataframe to retrieve all rows where the review written was not part of the paid Vine program.
+   - Filter the data and create a new DataFrame to pick reviews that are more likely to be helpful 
+   - Filter the DataFrame with helpful reviews and create a new DataFrame to retrieve rows where the majority of votes were helpful
+   - Filter the DataFrame where the majority of votes were helpful and create a new DataFrame to retrieve all rows where the review written was part of the paid Vine program.
+   - Filter the DataFrame where the majority of votes were helpful and create a new DataFrame to retrieve all rows where the review written was not part of the paid Vine program
   
 The Results Section will provide a bulleted list of answers to the following questions:
 1. How many Vine reviews and non-Vine reviews were there?
 2. How many Vine reviews were 5 stars? How many non-Vine reviews were 5 stars?
 3. What percentage of Vine reviews were 5 stars? What percentage of non-Vine reviews were 5 stars?
   
-Finally, the Summary Section will dicuss any conclusions made about positivity bias for reviews in the Vine program. There will also be a suggestion for an additional analysis that could be performed on the dataser to suppport the conclusions. 
+Finally, the Summary Section will dicuss any conclusions made about positivity bias for reviews from the Vine program. There will also be a suggestion for an additional analysis that could be performed on the dataser to suppport the conclusions. 
 
 # Analysis
 ## Performing ETL on the Amazon Vine US Video Games Reviews 
@@ -64,8 +64,8 @@ CREATE TABLE vine_table (
 );
 ```
 
-### ETL
-The code for the ETL process was written using Google CoLab so that I could access the Apache Spark analytics engine for its flexibility in big data processing. I accessed Spark through its Python API, PySpark, so that I could write the code for the ETL process in Python instead of Scala. The code reference in the sections below can be found in the Resources folder in this repository as [an .ipynb file](<insert ipynb file path>) exported from CoLab.
+### Performing ETL on the Amazon Vine Product Reviews
+The code for the ETL process was written using Google CoLab so that I could access the Apache Spark analytics engine for its flexibility in big data processing. I accessed Spark through its Python API, PySpark, so that I could write the code for the ETL process in Python instead of Scala. The code referenced in the sections below can be found in the Resources folder in this repository as [an .ipynb file](Resources/Amazon_Reviews_ETL.ipynb) exported from CoLab.
 #### Data Extraction 
 The [dataset file] (https://s3.amazonaws.com/amazon-reviews-pds/tsv/amazon_reviews_us_Video_Games_v1_00.tsv.gz)  can be found in Amazon’s file storage service, S3. This dataset was extracted and loaded into a Spark DataFrame using the following code:
 ```
@@ -85,7 +85,7 @@ To create the customers_table DataFrame, I grouped by the “customer_id” colu
 ```
 customers_df = df.groupby("customer_id").agg({"customer_id": "count"}).withColumnRenamed("count(customer_id)", "customer_count")
 ```
-This code generated the DataFrame in the snapshot below.
+This code generated the DataFrame in the snapshot below:
 
 ![customers_table_sample](https://user-images.githubusercontent.com/104794100/195959092-d2ffb06b-e042-43ab-8cce-324b507af5c9.png)
 
@@ -94,7 +94,7 @@ To create the products_table DataFrame, I selected for two columns from the orig
 ```
 products_df = df.select(["product_id", "product_title"]).drop_duplicates()
 ```
-This code generated the DataFrame in the snapshot below.
+This code generated the DataFrame in the snapshot below:
 
 ![products_table_sample](https://user-images.githubusercontent.com/104794100/195959206-abb3a473-f1fc-4332-a1ce-c3e04951ba20.png)
 
@@ -104,7 +104,7 @@ To create the review_id DataFrame, I selected for five columns from the original
 from pyspark.sql.functions import to_date
 review_id_df = df.select(["review_id", "customer_id", "product_id", "product_parent", to_date("review_date", 'yyyy-MM-dd').alias("review_date")])
 ```
-This code generated the DataFrame in the snapshot below.
+This code generated the DataFrame in the snapshot below:
 
 ![review_id_sample](https://user-images.githubusercontent.com/104794100/195959250-99124896-2b12-4f52-9a21-e3f95016d4a5.png)
 
@@ -114,7 +114,7 @@ To create the vine_table DataFrame I selected for six columns from the original 
 vine_df = df.select(["review_id", "star_rating", "helpful_votes", "total_votes", 
                      "vine", "verified_purchase"])
 ```
-This code generated the DataFrame in the snapshot below.
+This code generated the DataFrame in the snapshot below:
 
 ![vine_table_sample](https://user-images.githubusercontent.com/104794100/195959274-bdbe2321-6233-4154-8fd4-ff7d825fa126.png)
 
@@ -137,8 +137,117 @@ customers_df.write.jdbc(url=jdbc_url, table='customers_table', mode=mode, proper
 vine_df.write.jdbc(url=jdbc_url, table='vine_table', mode=mode, properties=config)
 ```
 Once this code was run in Google CoLab, I turned to pgAdmin to query the database and check that the data was properly loaded. 
+### Determining Bias of Vine Reviews
+The code for the following transformations was written using Google CoLab in PySpark (the reasoning can be found above in the ETL Section). The code referenced in the sections below can be found in the Resources folder in this repository as [an .ipynb file](Resources/Vine_Review_Analysis.ipynb) exported from CoLab. 
+#### Filter the data and create a new DataFrame to pick reviews that are more likely to be helpful
+This DataFrame was created by transforming the vine_table DataFrame. This new DataFrame was named twenty_plus_votes_df, and it was created to retrieve rows where the reviews ("review_id") recieved more than 20 votes ("total_votes").
+```
+twenty_plus_votes_df = vine_df.filter(vine_df['total_votes'] >= 20)
+```
+This code generated the DataFrame in the snapshot below:
 
+![Screen Shot 2022-10-15 at 1 47 14 AM](https://user-images.githubusercontent.com/104794100/195971172-1962926a-89b3-4067-8da8-b76ec87cf6e5.png)
 
+#### Filter the DataFrame with helpful reviews and create a new DataFrame to retrieve rows where the majority of votes were helpful
+This DataFrame named was created by transforming twenty_plus_votes_df. This new DataFrame was named fifty_percent_df, and it was created to retrieve rows where the number of "helpful_votes" divided by the number of "total_votes" is greater than or equal to 50%.
+```
+fifty_percent_df = twenty_plus_votes_df.filter(twenty_plus_votes_df["helpful_votes"]/twenty_plus_votes_df["total_votes"]>0.5)
+```
+This code generated the DataFrame in the snapshot below:
 
+![Screen Shot 2022-10-15 at 1 54 27 AM](https://user-images.githubusercontent.com/104794100/195971391-f928869e-8c5e-4314-ab5d-609a2b9abb25.png)
+
+#### Filter the DataFrame  where the majority of votes were helpful and create a new DataFrame to retrieve all rows where the review written was part of the paid Vine program.
+This DataFrame was created by transforming fifty_percent_df. This new DataFrame was named vine_review_df, and it was created to retreive rows where the the values in the "vine" column was equal to "Y".
+```
+vine_review_df = fifty_percent_df.filter(fifty_percent_df['vine']== 'Y')
+```
+This code generated the DataFrame in the snapshot below:
+
+![Screen Shot 2022-10-15 at 2 01 56 AM](https://user-images.githubusercontent.com/104794100/195971651-ca254ee3-3768-440b-93e8-659d8db423f3.png)
+
+#### Filter the DataFrame  where the majority of votes were helpful and create a new DataFrame to retrieve all rows where the review written was not part of the paid Vine program.
+This DataFrame was created by transforming fifty_percent_df. This new DataFrame was named not_vine_review_df, and it was created to retreive rows where the the values in the "vine" column was equal to "N".
+```
+not_vine_review_df = fifty_percent_df.filter(fifty_percent_df['vine']== 'N')
+```
+This code generated the DataFrame in the snapshot below:
+
+![Screen Shot 2022-10-15 at 2 02 06 AM](https://user-images.githubusercontent.com/104794100/195971657-a98be02a-1c77-4e9b-9835-1b5d851f440c.png)
+
+# Results 
+The code referenced in the sections below can be found in the Resources folder in this repository as [an .ipynb file](Resources/Vine_Review_Analysis.ipynb) exported from CoLab.
+
+- How many Vine reviews and non-Vine reviews were there?
+There was a total of **_40,0009 US video game reviews_**
+```
+vine_review_total = vine_review_df.count()
+print(vine_review_total)
+not_vine_review_total = not_vine_review_df.count()
+print(not_vine_review_total)
+print(vine_review_total + not_vine_review_total)
+```
+Output:
+```
+94
+39915
+40009
+```
+- How many Vine reviews were 5 stars? How many non-Vine reviews were 5 stars?
+There was a total of 15,604 5-star reviews. 
+There was a total of **_48 5-star reviews from Vine memebers_**.
+There was a total of **_15,556 5-star reviews from non-Vine memeber_**.
+```
+vine_five_stars = vine_review_df.filter(vine_review_df['star_rating']== 5).count()
+print(vine_five_stars)
+not_vine_five_stars = not_vine_review_df.filter(not_vine_review_df['star_rating']==5).count()
+print(not_vine_five_stars)
+total_five_stars = (vine_five_stars + not_vine_five_stars)
+print(total_five_stars)
+```
+Output:
+```
+48
+15556
+15604
+```
+- What percentage of Vine reviews were 5 stars? What percentage of non-Vine reviews were 5 stars?
+Out of the 94 Vine reviews, **_51% were 5-star reviews_**.
+Out of the 39,915 non-Vine reviews, **_39% were 5-star reviews__**.
+```
+percentage_vine_five_stars = vine_five_stars/vine_review_total 
+print(percentage_vine_five_stars)
+percentage_not_vine_five_stars = not_vine_five_stars/not_vine_review_total 
+print(percentage_not_vine_five_stars)
+```
+Output:
+```
+0.5106382978723404
+0.3897281723662783
+```
+# Summary 
+Based on the results above, I conclude that there is some positivity bias for reviews in the Vine program since 51% of the Vine reviews were 5-star reviews whereas only 38% of the non-Vine reviews were 5-star reviews. One should consider the total number fo reviews leading to these percentages. The data contained on 94 Vine reviews which could have lead to the bias exhibited. 
+
+## Suggestions
+I propose further analysis where more data is included for the Vine sample to see if the bias still exists. If a new DataFrame was created to retrieve rows where the reviews ("review_id") recieved more than 10 votes ("total_votes") this could increase the sample size of Vine reviews and potentially decrease the positivity bias. 
+When this proposed analysis was performed, the sample fo Vine reviews increase to 204 reviews where 92 of those reviews were 5-star reviews. This means only 45% of the Vine reviews were 5-star reviews which is only a slight decrease from the original 51%, so I stand by my conclusion that there is positivity bias for reviews in the Vine program. 
+The code for this analysis is shown below:
+```
+ten_plus_votes_df = vine_df.filter(vine_df['total_votes'] >= 10)
+fifty_percent_of_10_df = ten_plus_votes_df.filter(ten_plus_votes_df["helpful_votes"]/twenty_plus_votes_df["total_votes"]>0.5)
+expanded_vine_review_df = fifty_percent_of_10_df.filter(fifty_percent_of_10_df['vine']== 'Y')
+expanded_vine_review_total = expanded_vine_review_df.count()
+print(expanded_vine_review_total)
+expanded_vine_five_stars = expanded_vine_review_df.filter(expanded_vine_review_df['star_rating']== 5).count()
+print(expanded_vine_five_stars)
+percentage_expanded_vine_five_stars = expanded_vine_five_stars/expanded_vine_review_total 
+print(percentage_expanded_vine_five_stars)
+```
+Output:
+```
+204
+92
+0.45098039215686275
+```
 
 
